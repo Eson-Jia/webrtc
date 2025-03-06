@@ -11,29 +11,33 @@
   <body>
     <button onclick="window.doWHIP()">Publish</button>
     <button onclick="window.doWHEP()">Subscribe</button>
+    <button onclick="window.WHIPAndWHEP()" >Publish and Subscribe</button>
     <h3> Video </h3>
     <video id="videoPlayer" autoplay muted controls style="width: 500"> </video>
-
+    <h3> Video1 </h3>
+    <video id="videoPlayer1" autoplay muted controls style="width: 500"> </video>
 
     <h3> ICE Connection States </h3>
     <div id="iceConnectionStates"></div> <br />
   </body>
 
   <script>
-    let peerConnection = new RTCPeerConnection()
+    window.WHIPAndWHEP = async () => {
+      await window.doWHIP();
+      await window.doWHEP();
+    };
 
-    peerConnection.oniceconnectionstatechange = () => {
-      let el = document.createElement('p')
-      el.appendChild(document.createTextNode(peerConnection.iceConnectionState))
-
-      document.getElementById('iceConnectionStates').appendChild(el);
-    }
-
-    window.doWHEP = () => {
+    window.doWHEP = async () => {
+      let peerConnection = new RTCPeerConnection()
+      peerConnection.oniceconnectionstatechange = () => {
+        let el = document.createElement('p')
+        el.appendChild(document.createTextNode(`WHEP: ${peerConnection.iceConnectionState}`))
+        document.getElementById('iceConnectionStates').appendChild(el);
+      }
       peerConnection.addTransceiver('video', { direction: 'recvonly' })
 
       peerConnection.ontrack = function (event) {
-        document.getElementById('videoPlayer').srcObject = event.streams[0]
+        document.getElementById('videoPlayer1').srcObject = event.streams[0]
       }
 
       peerConnection.createOffer().then(offer => {
@@ -57,6 +61,12 @@
     }
 
     window.doWHIP = () => {
+      let peerConnection = new RTCPeerConnection()
+      peerConnection.oniceconnectionstatechange = () => {
+        let el = document.createElement('p')
+        el.appendChild(document.createTextNode(`WHIP: ${peerConnection.iceConnectionState}`))
+        document.getElementById('iceConnectionStates').appendChild(el);
+      }
       navigator.mediaDevices.getUserMedia({ video: true, audio: false })
         .then(stream => {
           document.getElementById('videoPlayer').srcObject = stream
