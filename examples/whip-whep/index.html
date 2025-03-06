@@ -11,10 +11,13 @@
   <body>
     <button onclick="window.doWHIP()">Publish</button>
     <button onclick="window.doWHEP()">Subscribe</button>
+    <input type="text" id="publishId" placeholder="Enter Publish ID" />
+    <input type="text" id="subscribeId" placeholder="Enter Subscribe ID" />
     <button onclick="window.WHIPAndWHEP()" >Publish and Subscribe</button>
-    <h3> Video </h3>
+    <h3> 推流 </h3>
     <video id="videoPlayer" autoplay muted controls style="width: 500"> </video>
-    <h3> Video1 </h3>
+    <h3> 拉流 </h3>
+
     <video id="videoPlayer1" autoplay muted controls style="width: 500"> </video>
 
     <h3> ICE Connection States </h3>
@@ -42,8 +45,11 @@
 
       peerConnection.createOffer().then(offer => {
         peerConnection.setLocalDescription(offer)
-
-        fetch(`/whep`, {
+        let target = '/whep';
+        if (document.getElementById('subscribeId').value) {
+            target = `/whep/${document.getElementById('subscribeId').value}`
+        }
+        fetch(target, {
           method: 'POST',
           body: offer.sdp,
           headers: {
@@ -74,8 +80,11 @@
 
           peerConnection.createOffer().then(offer => {
             peerConnection.setLocalDescription(offer)
-
-            fetch(`/whip`, {
+            let target = '/whip';
+            if (document.getElementById('publishId').value) {
+                target = `/whip/${document.getElementById('publishId').value}`
+            }
+            fetch(target, {
               method: 'POST',
               body: offer.sdp,
               headers: {

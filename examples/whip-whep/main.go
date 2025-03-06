@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
@@ -20,8 +22,6 @@ import (
 
 // nolint: gochecknoglobals
 var (
-	videoTrack *webrtc.TrackLocalStaticRTP
-
 	peerConnectionConfiguration = webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -31,25 +31,35 @@ var (
 	}
 )
 
+var mapOfTracks = make(map[string]*webrtc.TrackLocalStaticRTP)
+
+func MakeAndHoldVideoTrack(id string) *webrtc.TrackLocalStaticRTP {
+	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
+		MimeType: webrtc.MimeTypeH264,
+	}, "video", "pion")
+	if err != nil {
+		panic(err)
+	}
+	mapOfTracks[id] = track
+	return track
+}
+
 // nolint:gocognit
 func main() {
 	// Everything below is the Pion WebRTC API! Thanks for using it ❤️.
-	var err error
-	if videoTrack, err = webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
-		MimeType: webrtc.MimeTypeH264,
-	}, "video", "pion"); err != nil {
-		panic(err)
-	}
 
 	http.Handle("/", http.FileServer(http.Dir(".")))
-	http.HandleFunc("/whep", whepHandler)
-	http.HandleFunc("/whip", whipHandler)
+	http.HandleFunc("/whep/", whepHandler)
+	http.HandleFunc("/whip/", whipHandler)
 
 	fmt.Println("Open http://localhost:8080 to access this demo")
 	panic(http.ListenAndServe(":8080", nil)) // nolint: gosec
 }
 
 func whipHandler(res http.ResponseWriter, req *http.Request) {
+	//read id from http request path and remove the leading and trailing slashes
+	id := strings.TrimPrefix(req.URL.Path, "/whip/")
+	id = strings.TrimSuffix(id, "/")
 	// Read the offer from HTTP Request
 	offer, err := io.ReadAll(req.Body)
 	if err != nil {
@@ -117,7 +127,10 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 				panic(err)
 			}
 
-			if err = videoTrack.WriteRTP(pkt); err != nil {
+			if _, ok := mapOfTracks[id]; !ok {
+				MakeAndHoldVideoTrack(id)
+			}
+			if err = mapOfTracks[id].WriteRTP(pkt); err != nil {
 				panic(err)
 			}
 		}
@@ -129,6 +142,8 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 
 func whepHandler(res http.ResponseWriter, req *http.Request) {
 	// Read the offer from HTTP Request
+	id := strings.TrimPrefix(req.URL.Path, "/whep/")
+	id = strings.TrimSuffix(id, "/")
 	offer, err := io.ReadAll(req.Body)
 	if err != nil {
 		panic(err)
@@ -141,7 +156,14 @@ func whepHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	// Add Video Track that is being written to from WHIP Session
-	rtpSender, err := peerConnection.AddTrack(videoTrack)
+	for i := 0; i < 10 && mapOfTracks[id] == nil; i++ {
+		time.Sleep(1 * time.Second)
+	}
+	if mapOfTracks[id] == nil {
+		res.WriteHeader(http.StatusNotFound)
+		return
+	}
+	rtpSender, err := peerConnection.AddTrack(mapOfTracks[id])
 	if err != nil {
 		panic(err)
 	}
