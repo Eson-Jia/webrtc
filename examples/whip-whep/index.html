@@ -37,7 +37,7 @@
         el.appendChild(document.createTextNode(`WHEP: ${peerConnection.iceConnectionState}`))
         document.getElementById('iceConnectionStates').appendChild(el);
       }
-      peerConnection.addTransceiver('video', { direction: 'recvonly' })
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' })
 
       peerConnection.ontrack = function (event) {
         document.getElementById('videoPlayer1').srcObject = event.streams[0]
@@ -73,7 +73,7 @@
         el.appendChild(document.createTextNode(`WHIP: ${peerConnection.iceConnectionState}`))
         document.getElementById('iceConnectionStates').appendChild(el);
       }
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      navigator.mediaDevices.getUserMedia({ video: false, audio: true })
         .then(stream => {
           document.getElementById('videoPlayer').srcObject = stream
           stream.getTracks().forEach(track => peerConnection.addTrack(track, stream))

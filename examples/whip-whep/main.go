@@ -35,8 +35,8 @@ var mapOfTracks = make(map[string]*webrtc.TrackLocalStaticRTP)
 
 func MakeAndHoldVideoTrack(id string) *webrtc.TrackLocalStaticRTP {
 	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
-		MimeType: webrtc.MimeTypeH264,
-	}, "video", "pion")
+		MimeType: webrtc.MimeTypeOpus,
+	}, "audio", "pion")
 	if err != nil {
 		panic(err)
 	}
@@ -73,10 +73,11 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 	// We'll only use H264 but you can also define your own
 	if err = mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
-			MimeType: webrtc.MimeTypeH264, ClockRate: 90000, Channels: 0, SDPFmtpLine: "", RTCPFeedback: nil,
+			MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1",
+			RTCPFeedback: nil,
 		},
-		PayloadType: 96,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
+		PayloadType: 111,
+	}, webrtc.RTPCodecTypeAudio); err != nil {
 		panic(err)
 	}
 
@@ -113,7 +114,7 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	// Allow us to receive 1 video trac
-	if _, err = peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo); err != nil {
+	if _, err = peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio); err != nil {
 		panic(err)
 	}
 
