@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/pion/ice/v4"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -38,17 +39,35 @@ var api *webrtc.API
 func init() {
 	// Create a SettingEngine, this allows non-standard WebRTC behavior
 	settingEngine = &webrtc.SettingEngine{}
+	udp := true
 
-	// Configure our SettingEngine to use our UDPMux. By default a PeerConnection has
-	// no global state. The API+SettingEngine allows the user to share state between them.
-	// In this case we are sharing our listening port across many.
-	// Listen on UDP Port 8443, will be used for all WebRTC traffic
-	mux, err := ice.NewMultiUDPMuxFromPort(8443, ice.UDPMuxFromPortWithNetworks(ice.NetworkTypeUDP4))
-	if err != nil {
-		panic(err)
+	if udp { // Configure our SettingEngine to use our UDPMux. By default a PeerConnection has
+		// no global state. The API+SettingEngine allows the user to share state between them.
+		// In this case we are sharing our listening port across many.
+		// Listen on UDP Port 8443, will be used for all WebRTC traffic
+		mux, err := ice.NewMultiUDPMuxFromPort(8443, ice.UDPMuxFromPortWithNetworks(ice.NetworkTypeUDP4))
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Listening for WebRTC traffic at %d\n", 8443)
+		settingEngine.SetICEUDPMux(mux)
+	} else {
+		tcpListener, err := net.ListenTCP("tcp", &net.TCPAddr{
+			IP:   net.IP{0, 0, 0, 0},
+			Port: 8443,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("Listening for ICE TCP at %s\n", tcpListener.Addr())
+
+		tcpMux := webrtc.NewICETCPMux(nil, tcpListener, 8)
+		settingEngine.SetICETCPMux(tcpMux)
+		settingEngine.SetNetworkTypes([]webrtc.NetworkType{
+			webrtc.NetworkTypeTCP4,
+		})
 	}
-	fmt.Printf("Listening for WebRTC traffic at %d\n", 8443)
-	settingEngine.SetICEUDPMux(mux)
 }
 
 func init() {
