@@ -10,6 +10,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/pion/ice/v4"
 	"io"
 	"net/http"
 	"strings"
@@ -31,47 +32,38 @@ var (
 	}
 )
 
-var mapOfTracks = make(map[string]*webrtc.TrackLocalStaticRTP)
+var settingEngine *webrtc.SettingEngine
+var api *webrtc.API
 
-func MakeAndHoldVideoTrack(id string) *webrtc.TrackLocalStaticRTP {
-	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
-		MimeType: webrtc.MimeTypeOpus,
-	}, "audio", "pion")
+func init() {
+	// Create a SettingEngine, this allows non-standard WebRTC behavior
+	settingEngine = &webrtc.SettingEngine{}
+
+	// Configure our SettingEngine to use our UDPMux. By default a PeerConnection has
+	// no global state. The API+SettingEngine allows the user to share state between them.
+	// In this case we are sharing our listening port across many.
+	// Listen on UDP Port 8443, will be used for all WebRTC traffic
+	mux, err := ice.NewMultiUDPMuxFromPort(8443, ice.UDPMuxFromPortWithNetworks(ice.NetworkTypeUDP4))
 	if err != nil {
 		panic(err)
 	}
-	mapOfTracks[id] = track
-	return track
+	fmt.Printf("Listening for WebRTC traffic at %d\n", 8443)
+	settingEngine.SetICEUDPMux(mux)
 }
 
-// nolint:gocognit
-func main() {
-	// Everything below is the Pion WebRTC API! Thanks for using it ❤️.
-
-	http.Handle("/", http.FileServer(http.Dir(".")))
-	http.HandleFunc("/whep/", whepHandler)
-	http.HandleFunc("/whip/", whipHandler)
-
-	fmt.Println("Open http://localhost:8080 to access this demo")
-	panic(http.ListenAndServe(":8080", nil)) // nolint: gosec
-}
-
-func whipHandler(res http.ResponseWriter, req *http.Request) {
-	//read id from http request path and remove the leading and trailing slashes
-	id := strings.TrimPrefix(req.URL.Path, "/whip/")
-	id = strings.TrimSuffix(id, "/")
-	// Read the offer from HTTP Request
-	offer, err := io.ReadAll(req.Body)
+func init() {
+	var err error
+	err, api = prepareEngine()
 	if err != nil {
 		panic(err)
 	}
-
-	// Create a MediaEngine object to configure the supported codec
+}
+func prepareEngine() (error, *webrtc.API) {
 	mediaEngine := &webrtc.MediaEngine{}
 
 	// Setup the codecs you want to use.
 	// We'll only use H264 but you can also define your own
-	if err = mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+	if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
 		RTPCodecCapability: webrtc.RTPCodecCapability{
 			MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2, SDPFmtpLine: "minptime=10;useinbandfec=1",
 			RTCPFeedback: nil,
@@ -103,7 +95,52 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	// Create the API object with the MediaEngine
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithInterceptorRegistry(interceptorRegistry))
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine),
+		webrtc.WithSettingEngine(*settingEngine),
+		webrtc.WithInterceptorRegistry(interceptorRegistry))
+	return err, api
+}
+
+var mapOfTracks = make(map[string]*webrtc.TrackLocalStaticRTP)
+
+func MakeAndHoldVideoTrack(id string) *webrtc.TrackLocalStaticRTP {
+	track, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{
+		MimeType: webrtc.MimeTypeOpus,
+	}, "audio", "pion")
+	if err != nil {
+		panic(err)
+	}
+	mapOfTracks[id] = track
+	return track
+}
+
+// nolint:gocognit
+func main() {
+	// Everything below is the Pion WebRTC API! Thanks for using it ❤️.
+
+	http.Handle("/", http.FileServer(http.Dir(".")))
+	http.HandleFunc("/whep/", whepHandler)
+	http.HandleFunc("/whip/", whipHandler)
+
+	fmt.Println("Open http://localhost:8080 to access this demo")
+	panic(http.ListenAndServe("0.0.0.0:8080", nil)) // nolint: gosec
+}
+
+func whipHandler(res http.ResponseWriter, req *http.Request) {
+	//read id from http request path and remove the leading and trailing slashes
+	id := strings.TrimPrefix(req.URL.Path, "/whip/")
+	id = strings.TrimSuffix(id, "/")
+	// Read the offer from HTTP Request
+	offer, err := io.ReadAll(req.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	// Create a MediaEngine object to configure the supported codec
+	err, api = prepareEngine()
+	if err != nil {
+		panic(err)
+	}
 
 	// Prepare the configuration
 
@@ -151,7 +188,7 @@ func whepHandler(res http.ResponseWriter, req *http.Request) {
 	}
 
 	// Create a new RTCPeerConnection
-	peerConnection, err := webrtc.NewPeerConnection(peerConnectionConfiguration)
+	peerConnection, err := api.NewPeerConnection(peerConnectionConfiguration)
 	if err != nil {
 		panic(err)
 	}
