@@ -35,6 +35,10 @@
       peerConnection.oniceconnectionstatechange = () => {
         let el = document.createElement('p')
         el.appendChild(document.createTextNode(`WHEP: ${peerConnection.iceConnectionState}`))
+        if(peerConnection.iceConnectionState === 'disconnected'){
+          el.appendChild(document.createTextNode(`  你需要清理用户状态`));
+            el.style.color = 'red';
+        }
         document.getElementById('iceConnectionStates').appendChild(el);
       }
       peerConnection.addTransceiver('audio', { direction: 'recvonly' })
@@ -63,6 +67,9 @@
               type: 'answer'
             })
           })
+        .catch((e) => {
+          console.error(`Error: ${e} with ${target}`)
+        })
       })
     }
 
@@ -71,6 +78,10 @@
       peerConnection.oniceconnectionstatechange = () => {
         let el = document.createElement('p')
         el.appendChild(document.createTextNode(`WHIP: ${peerConnection.iceConnectionState}`))
+        if(peerConnection.iceConnectionState === 'disconnected'){
+          el.appendChild(document.createTextNode(`  你需要清理用户状态`));
+          el.style.color = 'red';
+        }
         document.getElementById('iceConnectionStates').appendChild(el);
       }
       navigator.mediaDevices.getUserMedia({ video: false, audio: true })
@@ -97,6 +108,9 @@
                   sdp: answer,
                   type: 'answer'
                 })
+              })
+              .catch((e) => {
+                console.error(`Error: ${e} with ${target}`)
               })
           })
       })
