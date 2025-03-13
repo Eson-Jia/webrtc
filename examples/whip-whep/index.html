@@ -18,7 +18,7 @@
 <!--    <video id="videoPlayer" autoplay muted controls style="width: 500"> </video>-->
     <h3> 拉流 </h3>
 
-    <video id="videoPlayer1" autoplay muted controls style="width: 500"> </video>
+    <audio id="audioPlayer1" autoplay controls > </audio>
 
     <h3> ICE Connection States </h3>
     <div id="iceConnectionStates"></div> <br />
@@ -44,7 +44,7 @@
       peerConnection.addTransceiver('audio', { direction: 'recvonly' })
 
       peerConnection.ontrack = function (event) {
-        document.getElementById('videoPlayer1').srcObject = event.streams[0]
+        document.getElementById('audioPlayer1').srcObject = event.streams[0]
       }
 
       peerConnection.createOffer().then(offer => {
