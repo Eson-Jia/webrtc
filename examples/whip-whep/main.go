@@ -41,7 +41,8 @@ func init() {
 	settingEngine = &webrtc.SettingEngine{}
 	udp := true
 
-	if udp { // Configure our SettingEngine to use our UDPMux. By default a PeerConnection has
+	if udp {
+		// Configure our SettingEngine to use our UDPMux. By default a PeerConnection has
 		// no global state. The API+SettingEngine allows the user to share state between them.
 		// In this case we are sharing our listening port across many.
 		// Listen on UDP Port 8443, will be used for all WebRTC traffic
