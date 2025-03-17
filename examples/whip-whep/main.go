@@ -1,4 +1,3 @@
-// SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
 // SPDX-License-Identifier: MIT
 
 //go:build !js
@@ -10,16 +9,17 @@ package main
 
 import (
 	"fmt"
-	"github.com/pion/ice/v4"
+	ice "github.com/pion/ice/v4"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
-	"github.com/pion/webrtc/v4"
+	webrtc "github.com/pion/webrtc/v4"
 )
 
 // nolint: gochecknoglobals
@@ -78,6 +78,7 @@ func init() {
 		panic(err)
 	}
 }
+
 func prepareEngine() (error, *webrtc.API) {
 	mediaEngine := &webrtc.MediaEngine{}
 
@@ -134,24 +135,30 @@ func MakeAndHoldVideoTrack(id string) *webrtc.TrackLocalStaticRTP {
 	return track
 }
 
-// nolint:gocognit
-func main() {
-	// Everything below is the Pion WebRTC API! Thanks for using it ❤️.
-
-	http.Handle("/", http.FileServer(http.Dir(".")))
-	http.HandleFunc("/whep/", whepHandler)
-	http.HandleFunc("/whip/", whipHandler)
-
-	fmt.Println("Open http://localhost:8080 to access this demo")
-	panic(http.ListenAndServe("0.0.0.0:8080", nil)) // nolint: gosec
+type Query struct {
+	Room string `uri:"room" binding:"required"`
+	User string `uri:"user" binding:"required"`
 }
 
-func whipHandler(res http.ResponseWriter, req *http.Request) {
-	//read id from http request path and remove the leading and trailing slashes
-	id := strings.TrimPrefix(req.URL.Path, "/whip/")
-	id = strings.TrimSuffix(id, "/")
+// nolint:gocognit
+func main() {
+	r := gin.Default()
+	r.Static("/", ".")
+	r.POST("/whep/:room/:user", whepHandler)
+	r.POST("/whip/:room/:user", whipHandler)
+
+	fmt.Println("Open http://localhost:8080 to access this demo")
+	panic(r.Run("0.0.0.0:8080"))
+}
+
+func whipHandler(c *gin.Context) {
+	var query Query
+	if err := c.ShouldBind(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	// Read the offer from HTTP Request
-	offer, err := io.ReadAll(req.Body)
+	offer, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -185,7 +192,7 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 				panic(err)
 			}
 
-			if _, ok := mapOfTracks[id]; !ok {
+			if _, ok := mapOfTracks[query.id]; !ok {
 				MakeAndHoldVideoTrack(id)
 			}
 			if err = mapOfTracks[id].WriteRTP(pkt); err != nil {
@@ -195,14 +202,14 @@ func whipHandler(res http.ResponseWriter, req *http.Request) {
 	})
 
 	// Send answer via HTTP Response
-	writeAnswer(res, peerConnection, offer, "/whip")
+	writeAnswer(c, peerConnection, offer, "/whip")
 }
 
-func whepHandler(res http.ResponseWriter, req *http.Request) {
+func whepHandler(c *gin.Context) {
 	// Read the offer from HTTP Request
-	id := strings.TrimPrefix(req.URL.Path, "/whep/")
+	id := strings.TrimPrefix(c.Request.URL.Path, "/whep/")
 	id = strings.TrimSuffix(id, "/")
-	offer, err := io.ReadAll(req.Body)
+	offer, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		panic(err)
 	}
@@ -218,7 +225,7 @@ func whepHandler(res http.ResponseWriter, req *http.Request) {
 		time.Sleep(1 * time.Second)
 	}
 	if mapOfTracks[id] == nil {
-		res.WriteHeader(http.StatusNotFound)
+		c.Status(http.StatusNotFound)
 		return
 	}
 	rtpSender, err := peerConnection.AddTrack(mapOfTracks[id])
@@ -239,10 +246,10 @@ func whepHandler(res http.ResponseWriter, req *http.Request) {
 	}()
 
 	// Send answer via HTTP Response
-	writeAnswer(res, peerConnection, offer, "/whep")
+	writeAnswer(c, peerConnection, offer, "/whep")
 }
 
-func writeAnswer(res http.ResponseWriter, peerConnection *webrtc.PeerConnection, offer []byte, path string) {
+func writeAnswer(c *gin.Context, peerConnection *webrtc.PeerConnection, offer []byte, path string) {
 	// Set the handler for ICE connection state
 	// This will notify you when the peer has connected/disconnected
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
@@ -276,9 +283,9 @@ func writeAnswer(res http.ResponseWriter, peerConnection *webrtc.PeerConnection,
 	<-gatherComplete
 
 	// WHIP+WHEP expects a Location header and a HTTP Status Code of 201
-	res.Header().Add("Location", path)
-	res.WriteHeader(http.StatusCreated)
+	c.Header("Location", path)
+	c.Status(http.StatusCreated)
 
 	// Write Answer with Candidates as HTTP Response
-	fmt.Fprint(res, peerConnection.LocalDescription().SDP) //nolint: errcheck
+	c.String(http.StatusCreated, peerConnection.LocalDescription().SDP)
 }
