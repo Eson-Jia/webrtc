@@ -234,15 +234,12 @@ func initRoomHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	caller, callee := User(uuid.New().String()), User(uuid.New().String())
-	cache[RoomId(room.Room)] = Room{
-		Caller: caller,
-		Callee: callee,
+	roomInfo := Room{
+		Caller: User(uuid.New().String()),
+		Callee: User(uuid.New().String()),
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"callerId": caller,
-		"calleeId": caller,
-	})
+	cache[RoomId(room.Room)] = roomInfo
+	c.JSON(http.StatusOK, roomInfo)
 	return
 }
 
