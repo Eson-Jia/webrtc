@@ -124,6 +124,9 @@
             localStream.getTracks().forEach(track => track.enabled = !track.enabled);
             micEnabled = !micEnabled;
             console.log(`Microphone ${micEnabled ? 'enabled' : 'disabled'}`);
+          let el = document.createElement('p');
+          el.appendChild(document.createTextNode(`Microphone ${micEnabled ? 'enabled' : 'disabled'}`));
+          document.getElementById('iceConnectionStates').appendChild(el);
         }
     };
 </script>
