@@ -1,0 +1,153 @@
+<html>
+
+<!--
+      SPDX-FileCopyrightText: 2023 The Pion community <https://pion.ly>
+      SPDX-License-Identifier: MIT
+  -->
+<head>
+    <title>whip-whep</title>
+</head>
+
+<body>
+<button onclick="window.doWHIP()">Publish</button>
+<button onclick="window.doWHEP()">Subscribe</button>
+<input type="text" id="roomId" placeholder="Enter Room ID"/>
+<input type="text" id="callerId" placeholder="Enter Caller ID"/>
+<input type="text" id="calleeId" placeholder="Enter Callee ID"/>
+<button onclick="window.answer()">Answer Caller</button>
+<button onclick="window.WHIPAndWHEP()">Publish and Subscribe</button>
+<button onclick="window.toggleMic()">Toggle Mic</button>
+
+<h3> 拉流 </h3>
+<audio id="audioPlayer1" autoplay controls></audio>
+
+<h3> ICE Connection States </h3>
+<div id="iceConnectionStates"></div>
+<br/>
+</body>
+
+<script>
+    let localStream;
+    let micEnabled = true;
+
+    window.WHIPAndWHEP = async () => {
+        await window.doWHIP();
+        await window.doWHEP();
+    };
+
+    window.answer = async () => {
+        if(!document.getElementById('roomId').value){
+            alert('请输入房间号');
+            return;
+        }
+        let roomId = document.getElementById('roomId').value;
+        let {callerId, calleeId} = await fetch(`/room/${roomId}`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer none`,
+                'Content-Type': 'application/json'
+            }
+        }).then(r => r.text())
+            .then(JSON.parse);
+        document.getElementById('callerId').value = callerId;
+        document.getElementById('calleeId').value = calleeId;
+    };
+
+    window.doWHEP = async () => {
+        let peerConnection = new RTCPeerConnection();
+        peerConnection.oniceconnectionstatechange = () => {
+            let el = document.createElement('p');
+            el.appendChild(document.createTextNode(`WHEP: ${peerConnection.iceConnectionState}`));
+            if (peerConnection.iceConnectionState === 'disconnected') {
+                el.appendChild(document.createTextNode(`  你需要清理用户状态`));
+                el.style.color = 'red';
+            }
+            document.getElementById('iceConnectionStates').appendChild(el);
+        };
+        peerConnection.addTransceiver('audio', {direction: 'recvonly'});
+
+        peerConnection.ontrack = function (event) {
+            document.getElementById('audioPlayer1').srcObject = event.streams[0];
+        };
+
+        peerConnection.createOffer().then(offer => {
+            peerConnection.setLocalDescription(offer);
+            let target = '/whep';
+            if (document.getElementById('callerId').value) {
+                target = `/whep/${document.getElementById('roomId').value}/${document.getElementById('callerId').value}`;
+            }
+            fetch(target, {
+                method: 'POST',
+                body: offer.sdp,
+                headers: {
+                    Authorization: `Bearer none`,
+                    'Content-Type': 'application/sdp'
+                }
+            }).then(r => r.text())
+                .then(answer => {
+                    peerConnection.setRemoteDescription({
+                        sdp: answer,
+                        type: 'answer'
+                    });
+                })
+                .catch((e) => {
+                    console.error(`Error: ${e} with ${target}`);
+                });
+        });
+    };
+
+    window.doWHIP = () => {
+        let peerConnection = new RTCPeerConnection();
+        peerConnection.oniceconnectionstatechange = () => {
+            let el = document.createElement('p');
+            el.appendChild(document.createTextNode(`WHIP: ${peerConnection.iceConnectionState}`));
+            if (peerConnection.iceConnectionState === 'disconnected') {
+                el.appendChild(document.createTextNode(`  你需要清理用户状态`));
+                el.style.color = 'red';
+            }
+            document.getElementById('iceConnectionStates').appendChild(el);
+        };
+        navigator.mediaDevices.getUserMedia({video: false, audio: true})
+            .then(stream => {
+                localStream = stream;
+                stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+
+                peerConnection.createOffer().then(offer => {
+                    peerConnection.setLocalDescription(offer);
+                    let target = '/whip';
+                    if (document.getElementById('calleeId').value) {
+                        target = `/whip/${document.getElementById('roomId').value}/${document.getElementById('calleeId').value}`;
+                    }
+                    fetch(target, {
+                        method: 'POST',
+                        body: offer.sdp,
+                        headers: {
+                            Authorization: `Bearer none`,
+                            'Content-Type': 'application/sdp'
+                        }
+                    }).then(r => r.text())
+                        .then(answer => {
+                            peerConnection.setRemoteDescription({
+                                sdp: answer,
+                                type: 'answer'
+                            });
+                        })
+                        .catch((e) => {
+                            console.error(`Error: ${e} with ${target}`);
+                        });
+                });
+            });
+    };
+
+    window.toggleMic = () => {
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.enabled = !track.enabled);
+            micEnabled = !micEnabled;
+            console.log(`Microphone ${micEnabled ? 'enabled' : 'disabled'}`);
+          let el = document.createElement('p');
+          el.appendChild(document.createTextNode(`Microphone ${micEnabled ? 'enabled' : 'disabled'}`));
+          document.getElementById('iceConnectionStates').appendChild(el);
+        }
+    };
+</script>
+</html>

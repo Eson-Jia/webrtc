@@ -8,12 +8,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/google/uuid"
 	ice "github.com/pion/ice/v4"
 	"io"
 	"net"
 	"net/http"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -140,10 +142,58 @@ type Query struct {
 	User string `uri:"user" binding:"required"`
 }
 
+type RoomId string
+
+type User string
+
+type Room struct {
+	Caller User `json:"callerId"`
+	Callee User `json:"calleeId"`
+}
+
+func (q Query) String() string {
+	return fmt.Sprintf("%s-%s", q.Room, q.User)
+}
+
+type bodyLogWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w bodyLogWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)
+	return w.ResponseWriter.Write(b)
+}
+
+var mutex sync.Mutex
+var cache = make(map[RoomId]Room)
+
 // nolint:gocognit
 func main() {
 	r := gin.Default()
+	//log request and response body
+	r.Use(func(c *gin.Context) {
+		// Read the request body
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.AbortWithError(http.StatusInternalServerError, err)
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // Restore the body for further use
+		fmt.Println("Request Body: ", string(bodyBytes))
+
+		// Capture the response body
+		responseWriter := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
+		c.Writer = responseWriter
+
+		c.Next()
+
+		fmt.Println("Response Body: ", responseWriter.body.String())
+	})
 	r.Static("/", ".")
+	r.POST("/room/create", createRoomHandler)
+	r.POST("/room/:room/init", initRoomHandler)
+	r.POST("/room/:room", getRoomHandler)
 	r.POST("/whep/:room/:user", whepHandler)
 	r.POST("/whip/:room/:user", whipHandler)
 
@@ -151,9 +201,54 @@ func main() {
 	panic(r.Run("0.0.0.0:8080"))
 }
 
+func getRoomHandler(c *gin.Context) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	room := struct {
+		Room string `uri:"room" binding:"required"`
+	}{}
+	if err := c.ShouldBindUri(&room); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	roomInfo, ok := cache[RoomId(room.Room)]
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "room not found"})
+	}
+	c.JSON(http.StatusOK, roomInfo)
+	return
+}
+
+func createRoomHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"room": uuid.New().String()})
+	return
+}
+
+func initRoomHandler(c *gin.Context) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	room := struct {
+		Room string `uri:"room" binding:"required"`
+	}{}
+	if err := c.ShouldBindUri(&room); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	caller, callee := User(uuid.New().String()), User(uuid.New().String())
+	cache[RoomId(room.Room)] = Room{
+		Caller: caller,
+		Callee: callee,
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"callerId": caller,
+		"calleeId": caller,
+	})
+	return
+}
+
 func whipHandler(c *gin.Context) {
 	var query Query
-	if err := c.ShouldBind(&query); err != nil {
+	if err := c.ShouldBindUri(&query); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -192,10 +287,10 @@ func whipHandler(c *gin.Context) {
 				panic(err)
 			}
 
-			if _, ok := mapOfTracks[query.id]; !ok {
-				MakeAndHoldVideoTrack(id)
+			if _, ok := mapOfTracks[query.String()]; !ok {
+				MakeAndHoldVideoTrack(query.String())
 			}
-			if err = mapOfTracks[id].WriteRTP(pkt); err != nil {
+			if err = mapOfTracks[query.String()].WriteRTP(pkt); err != nil {
 				panic(err)
 			}
 		}
@@ -206,9 +301,11 @@ func whipHandler(c *gin.Context) {
 }
 
 func whepHandler(c *gin.Context) {
-	// Read the offer from HTTP Request
-	id := strings.TrimPrefix(c.Request.URL.Path, "/whep/")
-	id = strings.TrimSuffix(id, "/")
+	var query Query
+	if err := c.ShouldBindUri(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	offer, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		panic(err)
@@ -221,14 +318,14 @@ func whepHandler(c *gin.Context) {
 	}
 
 	// Add Video Track that is being written to from WHIP Session
-	for i := 0; i < 10 && mapOfTracks[id] == nil; i++ {
+	for i := 0; i < 10 && mapOfTracks[query.String()] == nil; i++ {
 		time.Sleep(1 * time.Second)
 	}
-	if mapOfTracks[id] == nil {
+	if mapOfTracks[query.String()] == nil {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	rtpSender, err := peerConnection.AddTrack(mapOfTracks[id])
+	rtpSender, err := peerConnection.AddTrack(mapOfTracks[query.String()])
 	if err != nil {
 		panic(err)
 	}
