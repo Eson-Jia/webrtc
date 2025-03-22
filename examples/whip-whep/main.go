@@ -192,11 +192,19 @@ func main() {
 	})
 	r.Static("/", ".")
 	r.POST("/room/create", createRoomHandler)
+	r.POST("/room/test", createTestHandler)
 	r.POST("/room/:room/init", initRoomHandler)
 	r.POST("/room/:room", getRoomHandler)
 	r.POST("/whep/:room/:user", whepHandler)
 	r.POST("/whip/:room/:user", whipHandler)
 
+	go func() {
+		//send request to create room
+		_, err := http.Post("http://localhost:8080/room/test", "application/json", nil)
+		if err != nil {
+			fmt.Println("Failed to create room")
+		}
+	}()
 	fmt.Println("Open http://localhost:8080 to access this demo")
 	panic(r.Run("0.0.0.0:8080"))
 }
@@ -224,13 +232,23 @@ func createRoomHandler(c *gin.Context) {
 	return
 }
 
+func createTestHandler(c *gin.Context) {
+	roomInfo := Room{
+		Caller: User("1"),
+		Callee: User("2"),
+	}
+	cache[("1")] = roomInfo
+	c.JSON(http.StatusOK, roomInfo)
+	return
+}
+
 func initRoomHandler(c *gin.Context) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	room := struct {
+	request := struct {
 		Room string `uri:"room" binding:"required"`
 	}{}
-	if err := c.ShouldBindUri(&room); err != nil {
+	if err := c.ShouldBindUri(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -238,7 +256,7 @@ func initRoomHandler(c *gin.Context) {
 		Caller: User(uuid.New().String()),
 		Callee: User(uuid.New().String()),
 	}
-	cache[RoomId(room.Room)] = roomInfo
+	cache[RoomId(request.Room)] = roomInfo
 	c.JSON(http.StatusOK, roomInfo)
 	return
 }
