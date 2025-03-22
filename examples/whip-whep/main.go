@@ -35,12 +35,11 @@ var (
 	}
 )
 
-var settingEngine *webrtc.SettingEngine
 var api *webrtc.API
 
-func init() {
+func createSettingEngine() *webrtc.SettingEngine {
 	// Create a SettingEngine, this allows non-standard WebRTC behavior
-	settingEngine = &webrtc.SettingEngine{}
+	settingEngine := &webrtc.SettingEngine{}
 	udp := true
 
 	if udp {
@@ -71,6 +70,7 @@ func init() {
 			webrtc.NetworkTypeTCP4,
 		})
 	}
+	return settingEngine
 }
 
 func init() {
@@ -119,7 +119,7 @@ func prepareEngine() (error, *webrtc.API) {
 
 	// Create the API object with the MediaEngine
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine),
-		webrtc.WithSettingEngine(*settingEngine),
+		webrtc.WithSettingEngine(*createSettingEngine()),
 		webrtc.WithInterceptorRegistry(interceptorRegistry))
 	return err, api
 }
@@ -272,14 +272,6 @@ func whipHandler(c *gin.Context) {
 	if err != nil {
 		panic(err)
 	}
-
-	// Create a MediaEngine object to configure the supported codec
-	err, api = prepareEngine()
-	if err != nil {
-		panic(err)
-	}
-
-	// Prepare the configuration
 
 	// Create a new RTCPeerConnection
 	peerConnection, err := api.NewPeerConnection(peerConnectionConfiguration)
